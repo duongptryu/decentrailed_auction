@@ -2,18 +2,17 @@
   "version": 1,
   "dfx": "0.11.0",
   "canisters": {
-    "dauction_backend": {
+    "dip20": {
       "type": "motoko",
-      "main": "src/dauction_backend/main.mo"
+      "main": "src/dip20/main.mo"
     },
-    "dauction_frontend": {
-      "type": "assets",
-      "source": [
-        "src/dauction_frontend/assets"
-      ],
-      "dependencies": [
-        "dauction_backend"
-      ]
+    "dip721": {
+      "type": "motoko",
+      "main": "src/dip721/main.mo"
+    },
+    "marketplace_auction": {
+      "type": "motoko",
+      "main": "src/marketplace_auction/main.mo"
     }
   },
   "defaults": {
