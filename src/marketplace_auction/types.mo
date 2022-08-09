@@ -1,3 +1,4 @@
+import Time "mo:base/Time";
 module {
     // ledger types
     public type Operation = {
@@ -48,16 +49,61 @@ module {
 
     //========================================================== Auction
 
+    public type AuctionPending = {
+        seller: Principal;
+        lowestBid: Nat;
+        tokenPayment: Principal;
+        auctionTime: Time.Time;
+        metadataAuction: ?MetadataAuction;
+        voteUp: Nat;
+        voteDown: Nat;
+        timePending: Time.Time;
+        timeStart: Time.Time;
+    };
+
+    public type VoteMetadata = {
+        auctionPendingId: Nat;
+        vote: Vote;
+    };
+
+    public type Vote = {
+       #Up;
+       #Down;
+    };
+
     public type Auction = {
-        tokenId: Nat;
+        tokenId: ?Nat;
         seller: Principal;
         winner: Principal;
         lowestBid: Nat;
         tokenPayment: Principal;
-        startTime: Int;
-        auctionTime: Int;
+        startTime: Time.Time;
+        auctionTime: Time.Time;
         highestBidId: Nat;
         auctionState: AuctionState;
+        typeAuction: TypeAuction;
+        metadataAuction: ?MetadataAuction;
+        isSend: Bool;
+        isReceived: Bool;
+    };
+
+    public type AuctionCreate = {
+        tokenId: ?Nat;
+        lowestBid: Nat;
+        tokenPayment: Principal;
+        auctionTime: Time.Time;
+        typeAuction: TypeAuction;
+        metadataAuction: ?MetadataAuction;
+    };
+
+    public type MetadataAuction = {
+        file: [Text];
+        description: Text;
+    };
+
+    public type TypeAuction = {
+        #AuctionNFT;
+        #AuctionRealProduct;
     };
 
     public type Bid = {
@@ -68,9 +114,53 @@ module {
 
     public type AuctionState = {
         #AuctionStarted;
-        #AuctionHappenning;
         #AuctionEnded;
         #AuctionCancelled;
     };
 
+    //Error
+    public type ApiError = {
+        #Unauthorized;
+        #InvalidTokenId;
+        #InvalidAddress;
+        #AddressPaymentAllreadyExist;
+        #AddressPaymentNotExist;
+        #InvalidAuctionType;
+        #Other;
+    };
+
+    public type Result<T, E> = {
+        #Ok: T;
+        #Err: E;
+    };
+
+    public type AuctionError = {
+        #Unauthorized;
+        #InvalidTokenId;
+        #InvalidAddress;
+        #InvalidAuctionType;
+        #AuctionNotExist;
+        #AuctionPendingNotExist;
+        #AddressPaymentNotExist;
+        #Other;
+    };
+
+    public type AuctionPendingError = {
+        #Unauthorized;
+        #InvalidTokenId;
+        #InvalidAddress;
+        #AuctionPendingNotExist;
+        #AlreadyVoted;
+        #TimeVoteIsExpired;
+        #Other;
+    };
+
+    public type SupportedPaymentResult = Result<Bool, ApiError>;
+    public type AddAuctionResult = Result<Bool, AuctionError>;
+    public type GetAuctionResult = Result<Auction, AuctionError>;
+
+    public type GetAuctionPendingResult = Result<AuctionPending, AuctionPendingError>;
+    public type VoteAuctionPendingResult = Result<Bool, AuctionPendingError>;
+    public type ApproveAuctionPendingResult = Result<Bool, AuctionPendingError>;
+    public type GetVotedAuctionPendingResult = Result<[(Principal, Vote)], AuctionPendingError>;
 }
