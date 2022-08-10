@@ -107,14 +107,19 @@ module {
     };
 
     public type Bid = {
-        bidder: Principal;
+        bider: Principal;
         amount: Nat;
         bidId: Nat;
     };
 
+    public type AuctionBid = {
+        amount: Nat;
+        auctionId: Nat;
+    };
+
     public type AuctionState = {
         #AuctionStarted;
-        #AuctionEnded;
+        #AuctionFinished;
         #AuctionCancelled;
     };
 
@@ -140,8 +145,19 @@ module {
         #InvalidAddress;
         #InvalidAuctionType;
         #AuctionNotExist;
-        #AuctionPendingNotExist;
         #AddressPaymentNotExist;
+        #NotSeller;
+        #CannotCancelOrder;
+        #TimeAuctionNotEnd;
+        #NftAlreadyClaimed;
+        #NotOwnerOfBid;
+        #CannotClaimRealProduct;
+        #BidAlreadyClaimedOrNotExist;
+        #ErrCannotRefundHighestBid;
+        #NotSend;
+        #CustomerNotReceived;
+        #BidNotExist;
+        #NotWinner;
         #Other;
     };
 
@@ -152,15 +168,33 @@ module {
         #AuctionPendingNotExist;
         #AlreadyVoted;
         #TimeVoteIsExpired;
+        #NotSeller;
+        #CannotCancelOrder;
+        #AuctionAlreadyStarted;
         #Other;
+    };
+
+    public type AuctionBidError = {
+        #Unauthorized;
+        #InvalidTokenId;
+        #InvalidAddress;
+        #AuctionNotExist;
+        #TimeBidIsExpired;
+        #BidIsLessThanHighestBid;
     };
 
     public type SupportedPaymentResult = Result<Bool, ApiError>;
     public type AddAuctionResult = Result<Bool, AuctionError>;
+    public type CancelOrderResult = Result<Bool, AuctionError>;
     public type GetAuctionResult = Result<Auction, AuctionError>;
+    public type ClaimAuctionResult = Result<Bool, AuctionError>;
+    public type UpdateAuctionResult = Result<Bool, AuctionError>;
+
+    public type AuctionBidResult = Result<Bool, AuctionBidError>;
 
     public type GetAuctionPendingResult = Result<AuctionPending, AuctionPendingError>;
     public type VoteAuctionPendingResult = Result<Bool, AuctionPendingError>;
     public type ApproveAuctionPendingResult = Result<Bool, AuctionPendingError>;
     public type GetVotedAuctionPendingResult = Result<[(Principal, Vote)], AuctionPendingError>;
+    public type CancelAuctionPendingResult = Result<Bool, AuctionPendingError>;
 }

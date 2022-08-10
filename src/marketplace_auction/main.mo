@@ -88,7 +88,7 @@ shared(msg) actor class Dacution() {
 			return #Err(#AddressPaymentNotExist);
 		};
 		// assert not Principal.isAnonymous(caller);
-
+		// need transfer nft to market
 		if (data.typeAuction == #AuctionNFT) {
 			if (Option.isNull(data.tokenId)) {
 				return #Err(#InvalidTokenId);
@@ -107,12 +107,13 @@ shared(msg) actor class Dacution() {
 				auctionTime = data.auctionTime;
 				highestBidId = 0;
 				auctionState = #AuctionStarted;
-				isSend= false;
+				isSend= true;
 				isReceived= false;
 				metadataAuction = null;
 				typeAuction = data.typeAuction;
 			};
 			idToAuction.put(auctionIdCount, auction);
+			auctionToBids.put(auctionIdCount, HashMap.fromIter<Nat, Types.Bid>(Iter.fromArray([]), 1, Nat.equal, Hash.hash));
 			return #Ok(true);
 		}else if (data.typeAuction == #AuctionRealProduct) {
 			auctionPendingIdCount += 1;
@@ -130,12 +131,36 @@ shared(msg) actor class Dacution() {
 				timeStart = Time.now();
 			};
 			idToAuctionPending.put(auctionPendingIdCount, auctionPending);
-			var x: HashMap.HashMap<Principal, Types.Vote> = HashMap.fromIter<Principal, Types.Vote>(Iter.fromArray([(Principal.fromText("u5u7i-75ily-wvdre-ob4y6-pahvc-kyrg7-gq44l-zmyd4-7nwwn-mlhxw-zae"), #Up)]), 1, Principal.equal, Principal.hash);
-			auctionPendingToVotes.put(auctionPendingIdCount, x);
+			auctionPendingToVotes.put(auctionPendingIdCount, HashMap.fromIter<Principal, Types.Vote>(Iter.fromArray([]), 1, Principal.equal, Principal.hash));
 			return #Ok(true);
 		}else {
 			return #Err(#InvalidAuctionType);
 		};
+	};
+
+	public shared({caller}) func CancelOrder(auctionId: Nat): async Types.CancelOrderResult{
+		// assert not Principal.isAnonymous(caller);
+		switch(idToAuction.get(auctionId)) {
+			case null {
+				return #Err(#AuctionNotExist);
+			};
+			case (?auction) {
+				if (auction.seller != caller) {
+					return #Err(#NotSeller);
+				};
+				if (auction.auctionState != #AuctionStarted) {
+					return #Err(#CannotCancelOrder);
+				};
+				if(_unwrap(auctionToBids.get(auctionId)).size() > 0){
+					return #Err(#CannotCancelOrder);
+				};
+				//need transfer nft to owner
+				idToAuction.delete(auctionId);
+				auctionToBids.delete(auctionId);
+				return #Ok(true);
+			};
+		};
+		return #Ok(true)
 	};
 
 	public query func GetAuctions() : async [(Nat, Types.Auction)] {
@@ -153,7 +178,280 @@ shared(msg) actor class Dacution() {
 		};
 	};
 
+	public shared({caller}) func SetAlreadySentProduct(idAuction: Nat): async Types.UpdateAuctionResult {
+		switch(idToAuction.get(idAuction)) {
+			case null {
+				return #Err(#AuctionNotExist);
+			};
+			case (?auction) {
+				if (auction.seller != caller) {
+					return #Err(#NotSeller);
+				};
 
+				if (auction.typeAuction != #AuctionRealProduct) {
+					return #Err(#InvalidAuctionType);
+				};
+
+				if (auction.auctionTime + auction.startTime < Time.now()) {
+					return #Err(#TimeAuctionNotEnd);
+				};
+		
+				let newAuction: Types.Auction = {
+					tokenId = auction.tokenId;
+					seller = auction.seller;
+					winner = auction.winner;
+					lowestBid = auction.lowestBid;
+					tokenPayment = auction.tokenPayment;
+					startTime = auction.startTime;
+					auctionTime = auction.auctionTime;
+					highestBidId = auction.highestBidId;
+					auctionState = auction.auctionState;
+					isSend= true;
+					isReceived= auction.isReceived;
+					metadataAuction = auction.metadataAuction;
+					typeAuction = auction.typeAuction;
+				};
+				
+				idToAuction.put(idAuction, newAuction);
+				return #Ok(true);
+			};
+		};
+	};
+
+	public shared({caller}) func SetAlreadyReceiveProduct(idAuction: Nat): async  Types.UpdateAuctionResult {
+		switch(idToAuction.get(idAuction)) {
+			case null {
+				return #Err(#AuctionNotExist);
+			};
+			case (?auction) {
+				if (auction.typeAuction != #AuctionRealProduct) {
+					return #Err(#InvalidAuctionType);
+				};
+
+				if (auction.auctionTime + auction.startTime < Time.now()) {
+					return #Err(#TimeAuctionNotEnd);
+				};
+
+				switch(_unwrap(auctionToBids.get(idAuction)).get(auction.highestBidId)) {
+					case null {
+						return #Err(#BidNotExist);
+					};
+					case (?bid) {
+						if (bid.bider != caller) {
+							return #Err(#NotWinner);
+						};
+						
+						let newAuction: Types.Auction = {
+							tokenId = auction.tokenId;
+							seller = auction.seller;
+							winner = auction.winner;
+							lowestBid = auction.lowestBid;
+							tokenPayment = auction.tokenPayment;
+							startTime = auction.startTime;
+							auctionTime = auction.auctionTime;
+							highestBidId = auction.highestBidId;
+							auctionState = auction.auctionState;
+							isSend= auction.isSend;
+							isReceived= true;
+							metadataAuction = auction.metadataAuction;
+							typeAuction = auction.typeAuction;
+						};
+						
+						idToAuction.put(idAuction, newAuction);
+						return #Ok(true);
+					};
+				};
+			};
+		};
+	};
+
+	//=============================================================================================================================================
+	//AUCTION BIDs
+	public shared({caller}) func BidAuction(data: Types.AuctionBid): async Types.AuctionBidResult {
+		// assert not Principal.isAnonymous(caller);
+		switch(idToAuction.get(data.auctionId)) {
+			case null {
+				return #Err(#AuctionNotExist);
+			};
+			case (?auction) {
+				if (auction.auctionTime + auction.startTime > Time.now()) {
+					return #Err(#TimeBidIsExpired);
+				};
+				if (auction.highestBidId > 0) {
+					let highestBid = _unwrap(_unwrap(auctionToBids.get(data.auctionId)).get(auction.highestBidId));
+					if (highestBid.amount > data.amount) {
+						return #Err(#BidIsLessThanHighestBid);
+					};
+
+					//transfer token to highest to this owner
+					//transfer token of this bid to market
+				};
+
+				let bidId = auction.highestBidId + 1;
+				let bid: Types.Bid = {
+					amount = data.amount;
+					bider = caller;
+					bidId = bidId;
+				};
+
+				let newAuction: Types.Auction = {
+					tokenId = auction.tokenId;
+					seller = auction.seller;
+					winner = auction.winner;
+					lowestBid = auction.lowestBid;
+					tokenPayment = auction.tokenPayment;
+					startTime = auction.startTime;
+					auctionTime = auction.auctionTime;
+					highestBidId = bidId;
+					auctionState = auction.auctionState;
+					isSend= auction.isSend;
+					isReceived= auction.isReceived;
+					metadataAuction = auction.metadataAuction;
+					typeAuction = auction.typeAuction;
+				};
+				
+				idToAuction.put(data.auctionId, newAuction);
+				_unwrap(auctionToBids.get(data.auctionId)).put(bidId, bid);
+				return #Ok(true)
+				}
+			};
+	};
+
+	public query func GetBids(auctionId: Nat) : async [(Nat, Types.Bid)] {
+		switch (auctionToBids.get(auctionId)) {
+			case null {
+				return []
+			};
+			case (?bids) {
+				return Iter.toArray(bids.entries())
+			};
+		};
+	};
+
+	public shared({caller}) func ClaimNft(auctionId: Nat): async Types.ClaimAuctionResult {
+		// assert not Principal.isAnonymous(caller);
+		switch(idToAuction.get(auctionId)) {
+			case null {
+				return #Err(#AuctionNotExist);
+			};
+			case (?auction) {
+				if (auction.typeAuction != #AuctionNFT) {
+					return #Err(#CannotClaimRealProduct);
+				};
+				if (auction.auctionTime + auction.startTime < Time.now()) {
+					return #Err(#TimeAuctionNotEnd);
+				};
+				if (not Principal.isAnonymous(auction.winner)) {
+					return #Err(#NftAlreadyClaimed);
+				};
+				let highestBidId = auction.highestBidId;
+
+				if (_unwrap(_unwrap(auctionToBids.get(auctionId)).get(highestBidId)).bider != caller) {
+					return #Err(#NotOwnerOfBid);
+				};
+				
+				let newAuction: Types.Auction = {
+					tokenId = auction.tokenId;
+					seller = auction.seller;
+					winner = caller;
+					lowestBid = auction.lowestBid;
+					tokenPayment = auction.tokenPayment;
+					startTime = auction.startTime;
+					auctionTime = auction.auctionTime;
+					highestBidId = auction.highestBidId;
+					auctionState = #AuctionFinished;
+					isSend= auction.isSend;
+					isReceived= true;
+					metadataAuction = auction.metadataAuction;
+					typeAuction = auction.typeAuction;
+				};
+				
+				idToAuction.put(auctionId, newAuction);
+
+				//need to be transfer NFT to winner
+
+				return #Ok(true)
+
+			};
+		};
+	};
+
+	public shared({caller}) func RefundToken(idAuction: Nat, idBid: Nat) : async Types.ClaimAuctionResult {
+		// assert not Principal.isAnonymous(caller);
+		switch(idToAuction.get(idAuction)) {
+			case null {
+				return #Err(#AuctionNotExist);
+			};
+			case (?auction) {
+				if (auction.auctionTime + auction.startTime < Time.now()) {
+					return #Err(#TimeAuctionNotEnd);
+				};
+
+				// Owner of order claim token
+				if (auction.highestBidId == idBid) {
+					return #Err(#ErrCannotRefundHighestBid)
+				};
+
+				if (auction.typeAuction == #AuctionNFT) {
+					switch(_unwrap(auctionToBids.get(idAuction)).get(idBid)){
+						case null {
+							return #Err(#BidAlreadyClaimedOrNotExist); 
+						};
+						case (?bid) {
+							if (bid.bider != caller) {
+								return #Err(#NotOwnerOfBid);
+							};
+
+							// transfer token to this caller
+
+							//delete this bid
+							_unwrap(auctionToBids.get(idAuction)).delete(idBid)
+						}
+					}
+				}else if (auction.typeAuction == #AuctionRealProduct) {
+
+				};
+
+				return #Ok(true)
+			};
+		};
+	};
+
+	public shared({caller}) func ClaimToken(idAuction: Nat) : async Types.ClaimAuctionResult {
+		// assert not Principal.isAnonymous(caller);
+		switch(idToAuction.get(idAuction)) {
+			case null {
+				return #Err(#AuctionNotExist);
+			};
+			case (?auction) {
+				if (auction.auctionTime + auction.startTime < Time.now()) {
+					return #Err(#TimeAuctionNotEnd);
+				};
+
+				// Owner of order claim token
+				if (auction.seller != caller) {
+					return #Err(#NotSeller)
+				};
+
+				if (auction.typeAuction == #AuctionNFT) {
+					//transfer token to this caller
+					//remove offer
+					_unwrap(auctionToBids.get(idAuction)).delete(auction.highestBidId)
+				}else if (auction.typeAuction == #AuctionRealProduct) {
+					if (not auction.isSend) {
+						return #Err(#NotSend)
+					};
+					if (not auction.isReceived) {
+						return #Err(#CustomerNotReceived)
+					};
+					//transfer token to this caller
+					//remove offer
+					_unwrap(auctionToBids.get(idAuction)).delete(auction.highestBidId)
+				};
+				return #Ok(true)
+			};
+		};
+	};
 
 	//=============================================================================================================================================
 
@@ -270,7 +568,28 @@ shared(msg) actor class Dacution() {
 					typeAuction = #AuctionRealProduct;
 				};
 				idToAuction.put(id, auction);
+				auctionToBids.put(auctionIdCount, HashMap.fromIter<Nat, Types.Bid>(Iter.fromArray([]), 1, Nat.equal, Hash.hash));
 				idToAuctionPending.delete(idAuctionPending);
+				return #Ok(true);
+			};
+		};
+	};
+
+	public shared({caller}) func CancelAuctionPending(id: Nat) : async Types.CancelAuctionPendingResult {
+		switch(idToAuctionPending.get(id)) {
+			case null {
+				return #Err(#AuctionPendingNotExist);
+			};
+			case (?auction) {
+				if (auction.seller != caller) {
+					return #Err(#NotSeller);
+				};
+				if(auction.timeStart + auction.auctionTime > Time.now()) {
+					return #Err(#AuctionAlreadyStarted);
+				};
+				//need transfer nft to owner
+				idToAuctionPending.delete(id);
+				auctionPendingToVotes.delete(id);
 				return #Ok(true);
 			};
 		};
