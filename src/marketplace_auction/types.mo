@@ -14,7 +14,6 @@ module {
         #failed;
     };
 
-    // Dip20 token interface
     public type TxReceipt = {
         #Ok: Nat;
         #Err: {
@@ -40,6 +39,7 @@ module {
         fee : Nat; // fee for update calls
     };
 
+    // Dip20 token interface
     public type IDIP20 = actor {
         transfer : (Principal,Nat) ->  async TxReceipt;
         transferFrom : (Principal,Principal,Nat) -> async TxReceipt;
@@ -47,9 +47,17 @@ module {
         getMetadata: () -> async Metadata;
     };
 
+    //Dip721 interface
+    public type IDIP721 = actor {
+       isApprovedForAll: (Principal, Principal) -> async Bool;
+       ownerOf: (Nat) -> async ?Principal;
+       mint: (Text) -> async Nat;
+    };
+
     //========================================================== Auction
 
     public type AuctionPending = {
+        id: Nat;
         seller: Principal;
         lowestBid: Nat;
         tokenPayment: Principal;
@@ -72,6 +80,7 @@ module {
     };
 
     public type Auction = {
+        id: Nat;
         tokenId: ?Nat;
         seller: Principal;
         winner: Principal;
@@ -107,6 +116,7 @@ module {
     };
 
     public type Bid = {
+        id: Nat;
         bider: Principal;
         amount: Nat;
         bidId: Nat;

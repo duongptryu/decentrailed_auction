@@ -10,12 +10,14 @@ import P "mo:base/Prelude";
 import Principal "mo:base/Principal";
 import Time "mo:base/Time";
 
-import Types "./types"; 
+import Types "./types";
 
-shared(msg) actor class Dacution() {
+shared(msg) actor class Dacution(dip20: Principal, dip721: Principal) {
 	public type Time = Time.Time;
 
-    private stable var owner = Principal.fromText("2vxsx-fae");
+    private stable var owner = msg.caller;
+	private stable var dauTokenProvider: Types.IDIP20 = actor(Principal.toText(dip20)) : Types.IDIP20;
+	private stable var nftProvider: Types.IDIP721 = actor(Principal.toText(dip721)) : Types.IDIP721;
 
     private stable var auctionIdCount: Nat = 0;
 	private stable var auctionPendingIdCount: Nat = 0;
@@ -47,8 +49,9 @@ shared(msg) actor class Dacution() {
 	};
 
 	public shared({caller}) func AddSupportedPayment(address: Principal) : async Types.SupportedPaymentResult {
-		// assert caller == owner;
-		// assert not Principal.isAnonymous(address);
+		if (caller != owner) {
+			return #Err(#Unauthorized);
+		};
 
 		if (Option.isSome(paymentExist.get(address))) {
 			return #Err(#AddressPaymentAllreadyExist);
@@ -98,6 +101,7 @@ shared(msg) actor class Dacution() {
 
 			let auctionId = auctionIdCount;
 			var auction: Types.Auction = {
+				id= auctionId;
 				tokenId = data.tokenId;
 				seller = caller;
 				winner = Principal.fromText("2vxsx-fae");
@@ -120,6 +124,7 @@ shared(msg) actor class Dacution() {
 
 			let auctionPendingId = auctionPendingIdCount;
 			var auctionPending: Types.AuctionPending = {
+				id= auctionPendingIdCount;
 				seller = caller;
 				lowestBid = data.lowestBid;
 				tokenPayment = data.tokenPayment;
@@ -163,8 +168,10 @@ shared(msg) actor class Dacution() {
 		return #Ok(true)
 	};
 
-	public query func GetAuctions() : async [(Nat, Types.Auction)] {
-		return Iter.toArray(idToAuction.entries())
+	public query func GetAuctions() : async [Types.Auction] {
+		return Iter.toArray(Iter.map(idToAuction.entries(), func ((id: Nat, auction: Types.Auction)) : Types.Auction {
+			auction
+		}));
 	};
 
 	public query func GetAuction(id: Nat) : async Types.GetAuctionResult {
@@ -197,6 +204,7 @@ shared(msg) actor class Dacution() {
 				};
 		
 				let newAuction: Types.Auction = {
+					id = auction.id;
 					tokenId = auction.tokenId;
 					seller = auction.seller;
 					winner = auction.winner;
@@ -242,6 +250,7 @@ shared(msg) actor class Dacution() {
 						};
 						
 						let newAuction: Types.Auction = {
+							id = auction.id;
 							tokenId = auction.tokenId;
 							seller = auction.seller;
 							winner = auction.winner;
@@ -289,12 +298,14 @@ shared(msg) actor class Dacution() {
 
 				let bidId = auction.highestBidId + 1;
 				let bid: Types.Bid = {
+					id = bidId;
 					amount = data.amount;
 					bider = caller;
 					bidId = bidId;
 				};
 
 				let newAuction: Types.Auction = {
+					id = auction.id;
 					tokenId = auction.tokenId;
 					seller = auction.seller;
 					winner = auction.winner;
@@ -317,13 +328,15 @@ shared(msg) actor class Dacution() {
 			};
 	};
 
-	public query func GetBids(auctionId: Nat) : async [(Nat, Types.Bid)] {
+	public query func GetBids(auctionId: Nat) : async [Types.Bid] {
 		switch (auctionToBids.get(auctionId)) {
 			case null {
 				return []
 			};
 			case (?bids) {
-				return Iter.toArray(bids.entries())
+				return Iter.toArray(Iter.map(bids.entries(), func ((id: Nat, bid: Types.Bid)) : Types.Bid {
+					bid
+				}));
 			};
 		};
 	};
@@ -351,6 +364,7 @@ shared(msg) actor class Dacution() {
 				};
 				
 				let newAuction: Types.Auction = {
+					id = auction.id;
 					tokenId = auction.tokenId;
 					seller = auction.seller;
 					winner = caller;
@@ -456,8 +470,10 @@ shared(msg) actor class Dacution() {
 	//=============================================================================================================================================
 
 	//AuctionPending
-	public query func GetAuctionPending() : async [(Nat, Types.AuctionPending)] {
-		return Iter.toArray(idToAuctionPending.entries());
+	public query func GetAuctionPending() : async [Types.AuctionPending] {
+		return Iter.toArray(Iter.map(idToAuctionPending.entries(), func ((id: Nat, auction: Types.AuctionPending)) : Types.AuctionPending {
+			auction
+		}));
 	};
 
 	public query func GetAAuctionPending(id: Nat) : async Types.GetAuctionPendingResult {
@@ -491,6 +507,7 @@ shared(msg) actor class Dacution() {
 				switch(data.vote){
 					case (#Up){
 						let newAuctionPending = {
+							id = auctionPendingData.id;
 							seller = auctionPendingData.seller;
 							lowestBid = auctionPendingData.lowestBid;
 							tokenPayment = auctionPendingData.tokenPayment;
@@ -505,6 +522,7 @@ shared(msg) actor class Dacution() {
 					};
 					case(#Down){
 						let newAuctionPending = {
+							id = auctionPendingData.id;
 							seller = auctionPendingData.seller;
 							lowestBid = auctionPendingData.lowestBid;
 							tokenPayment = auctionPendingData.tokenPayment;
@@ -553,6 +571,7 @@ shared(msg) actor class Dacution() {
 				let id = auctionIdCount;
 
 				let auction: Types.Auction = {
+					id = auctionIdCount;
 					tokenId = null;
 					seller = auctionPendingData.seller;
 					winner = Principal.fromText("2vxsx-fae");
