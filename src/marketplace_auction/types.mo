@@ -50,8 +50,10 @@ module {
     //Dip721 interface
     public type IDIP721 = actor {
        isApprovedForAll: (Principal, Principal) -> async Bool;
+       getApproved: (Nat) ->  async Principal;
        ownerOf: (Nat) -> async ?Principal;
        mint: (Text) -> async Nat;
+       transferFrom: (Principal, Principal, Nat) -> ()
     };
 
     //========================================================== Auction
@@ -154,6 +156,8 @@ module {
         #InvalidTokenId;
         #InvalidAddress;
         #InvalidAuctionType;
+        #NotOwnerOfToken;
+        #NotOwnerOrApprovedForToken;
         #AuctionNotExist;
         #AddressPaymentNotExist;
         #NotSeller;

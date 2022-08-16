@@ -12,12 +12,13 @@ import Time "mo:base/Time";
 
 import Types "./types";
 
-shared(msg) actor class Dacution(dip20: Principal, dip721: Principal) {
+shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: Principal) {
 	public type Time = Time.Time;
 
-    private stable var owner = msg.caller;
-	private stable var dauTokenProvider: Types.IDIP20 = actor(Principal.toText(dip20)) : Types.IDIP20;
-	private stable var nftProvider: Types.IDIP721 = actor(Principal.toText(dip721)) : Types.IDIP721;
+	private var storage = reserve;
+    private var owner = msg.caller;
+	private var dauTokenProvider: Types.IDIP20 = actor(Principal.toText(dip20)) : Types.IDIP20;
+	private var nftProvider: Types.IDIP721 = actor(Principal.toText(dip721)) : Types.IDIP721;
 
     private stable var auctionIdCount: Nat = 0;
 	private stable var auctionPendingIdCount: Nat = 0;
@@ -90,12 +91,27 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal) {
 		if(not _isSupportedPayment(data.tokenPayment)) {
 			return #Err(#AddressPaymentNotExist);
 		};
-		// assert not Principal.isAnonymous(caller);
+		assert not Principal.isAnonymous(caller);
+
 		// need transfer nft to market
 		if (data.typeAuction == #AuctionNFT) {
 			if (Option.isNull(data.tokenId)) {
 				return #Err(#InvalidTokenId);
 			};
+
+			let ownerToken = await nftProvider.ownerOf(_unwrap(data.tokenId));
+			if (Option.isNull(ownerToken)) {
+				return #Err(#NotOwnerOfToken);
+			};
+
+			if (_unwrap(ownerToken) != caller) {
+				let approvedFor = await nftProvider.getApproved(_unwrap(data.tokenId));
+				if (approvedFor != caller) {
+					return #Err(#NotOwnerOrApprovedForToken);
+				};
+			};
+
+			nftProvider.transferFrom(caller, reserve, _unwrap(data.tokenId));
 
 			auctionIdCount += 1;
 

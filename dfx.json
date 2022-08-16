@@ -13,6 +13,10 @@
     "marketplace_auction": {
       "type": "motoko",
       "main": "src/marketplace_auction/main.mo"
+    },
+    "reserve": {
+      "type": "motoko",
+      "main": "src/reserve/main.mo"
     }
   },
   "defaults": {

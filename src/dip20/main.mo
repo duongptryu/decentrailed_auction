@@ -22,7 +22,7 @@ actor Dip20Token {
 	
 	stable var name_ : Text = "ExampleCoin";
 	
-	stable var totalSupply_ : Nat = 10000000000;
+	stable var totalSupply_ : Nat = 10_000_000_000;
 	
 	stable var symbol_ : Text = "EXC";
 	
