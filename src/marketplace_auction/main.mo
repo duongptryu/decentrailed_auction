@@ -1,4 +1,5 @@
 import Array "mo:base/Array";
+import Debug "mo:base/Debug";
 import Error "mo:base/Error";
 import Hash "mo:base/Hash";
 import HashMap "mo:base/HashMap";
@@ -29,6 +30,7 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
     private stable var supportedPaymentStore: [(Principal, Bool)] = [];
     private stable var auctionStore: [(Nat, Types.Auction)] = [];
     private stable var bidStore: [(Nat, Types.Bid)] = [];
+	private stable var listSeller: [(Principal, Types.Seller)] = [];
     private stable var auctionTobidsStore: [(Nat, [(Nat, Types.Bid)])] = [];
 	private stable var auctionPendingStore: [(Nat, Types.AuctionPending)] = [];
 	private stable var auctionToVotesStore: [(Nat, [(Principal, Types.Vote)])] = [];
@@ -37,6 +39,7 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
     private var idToBid: HashMap.HashMap<Nat, Types.Bid> = HashMap.fromIter(bidStore.vals(), 10, Nat.equal, Hash.hash);
     private var paymentExist: HashMap.HashMap<Principal, Bool> = HashMap.fromIter(supportedPaymentStore.vals(), 10, Principal.equal, Principal.hash);
     private var auctionToBids = HashMap.HashMap<Nat, HashMap.HashMap<Nat, Types.Bid>>(1, Nat.equal, Hash.hash);
+	private var idToSeller: HashMap.HashMap<Principal, Types.Seller> = HashMap.fromIter(listSeller.vals(), 10, Principal.equal, Principal.hash);
 
 	private var idToAuctionPending: HashMap.HashMap<Nat, Types.AuctionPending> = HashMap.fromIter(auctionPendingStore.vals(), 10, Nat.equal, Hash.hash);
 	private var auctionPendingToVotes = HashMap.HashMap<Nat, HashMap.HashMap<Principal, Types.Vote>>(1, Nat.equal, Hash.hash);
@@ -88,6 +91,9 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 	
 	//ORDER
 	public shared({caller}) func AddOrder(data: Types.AuctionCreate): async Types.AddAuctionResult {
+		if (not _isSeller(caller)) {
+			return #Err(#NotSeller);
+		};
 		if(not _isSupportedPayment(data.tokenPayment)) {
 			return #Err(#AddressPaymentNotExist);
 		};
@@ -105,13 +111,17 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 			};
 
 			if (_unwrap(ownerToken) != caller) {
-				let approvedFor = await nftProvider.getApproved(_unwrap(data.tokenId));
-				if (approvedFor != caller) {
+				try {
+					let approvedFor = await nftProvider.getApproved(_unwrap(data.tokenId));
+					if (approvedFor != caller) {
+						return #Err(#NotOwnerOrApprovedForToken);
+					};
+				}catch(e) {
 					return #Err(#NotOwnerOrApprovedForToken);
 				};
 			};
 
-			nftProvider.transferFrom(caller, reserve, _unwrap(data.tokenId));
+			await nftProvider.transferFrom(caller, reserve, _unwrap(data.tokenId));
 
 			auctionIdCount += 1;
 
@@ -121,7 +131,9 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 				tokenId = data.tokenId;
 				seller = caller;
 				winner = Principal.fromText("2vxsx-fae");
-				lowestBid = data.lowestBid;
+				stepBid = data.stepBid;
+				startPrice = data.startPrice;
+				currentPrice = data.startPrice;
 				tokenPayment = data.tokenPayment;
 				startTime = Time.now();
 				auctionTime = data.auctionTime;
@@ -134,7 +146,7 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 			};
 			idToAuction.put(auctionIdCount, auction);
 			auctionToBids.put(auctionIdCount, HashMap.fromIter<Nat, Types.Bid>(Iter.fromArray([]), 1, Nat.equal, Hash.hash));
-			return #Ok(true);
+			return #Ok(auctionId);
 		}else if (data.typeAuction == #AuctionRealProduct) {
 			auctionPendingIdCount += 1;
 
@@ -142,7 +154,8 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 			var auctionPending: Types.AuctionPending = {
 				id= auctionPendingIdCount;
 				seller = caller;
-				lowestBid = data.lowestBid;
+				stepBid = data.stepBid;
+				startPrice = data.startPrice;
 				tokenPayment = data.tokenPayment;
 				auctionTime = data.auctionTime;
 				metadataAuction = data.metadataAuction;
@@ -153,7 +166,7 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 			};
 			idToAuctionPending.put(auctionPendingIdCount, auctionPending);
 			auctionPendingToVotes.put(auctionPendingIdCount, HashMap.fromIter<Principal, Types.Vote>(Iter.fromArray([]), 1, Principal.equal, Principal.hash));
-			return #Ok(true);
+			return #Ok(auctionPendingIdCount);
 		}else {
 			return #Err(#InvalidAuctionType);
 		};
@@ -224,7 +237,9 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 					tokenId = auction.tokenId;
 					seller = auction.seller;
 					winner = auction.winner;
-					lowestBid = auction.lowestBid;
+					stepBid = auction.stepBid;
+					startPrice = auction.startPrice;
+					currentPrice = auction.startPrice;
 					tokenPayment = auction.tokenPayment;
 					startTime = auction.startTime;
 					auctionTime = auction.auctionTime;
@@ -270,7 +285,9 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 							tokenId = auction.tokenId;
 							seller = auction.seller;
 							winner = auction.winner;
-							lowestBid = auction.lowestBid;
+							stepBid = auction.stepBid;
+							startPrice = auction.startPrice;
+							currentPrice = auction.startPrice;
 							tokenPayment = auction.tokenPayment;
 							startTime = auction.startTime;
 							auctionTime = auction.auctionTime;
@@ -299,17 +316,36 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 				return #Err(#AuctionNotExist);
 			};
 			case (?auction) {
-				if (auction.auctionTime + auction.startTime > Time.now()) {
+				if (auction.auctionTime + auction.startTime >= Time.now()) {
 					return #Err(#TimeBidIsExpired);
 				};
 				if (auction.highestBidId > 0) {
 					let highestBid = _unwrap(_unwrap(auctionToBids.get(data.auctionId)).get(auction.highestBidId));
-					if (highestBid.amount > data.amount) {
+					if (highestBid.bider == caller) {
+						return #Err(#YouAreHighestBidNow);
+					};
+					if (highestBid.amount + auction.stepBid > data.amount) {
 						return #Err(#BidIsLessThanHighestBid);
 					};
-
 					//transfer token to highest to this owner
-					//transfer token of this bid to market
+				};
+				if (data.amount < auction.stepBid + auction.currentPrice) {
+					return #Err(#BidIsLessThanLowestPrice);
+				};
+
+				//transfer token of this bid to market
+				try{
+					var resp = await dauTokenProvider.transferFrom(caller, reserve, data.amount);
+					switch (resp) {
+						case (#Ok(id)) {
+
+						};
+						case (_) {
+							return #Err(#NotEnoughtBalanceOrNotApprovedYet);
+						}
+					}
+				}catch(e) {
+					return #Err(#NotEnoughtBalanceOrNotApprovedYet);
 				};
 
 				let bidId = auction.highestBidId + 1;
@@ -325,7 +361,9 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 					tokenId = auction.tokenId;
 					seller = auction.seller;
 					winner = auction.winner;
-					lowestBid = auction.lowestBid;
+					stepBid = auction.stepBid;
+					startPrice = auction.startPrice;
+					currentPrice =  data.amount;
 					tokenPayment = auction.tokenPayment;
 					startTime = auction.startTime;
 					auctionTime = auction.auctionTime;
@@ -339,7 +377,7 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 				
 				idToAuction.put(data.auctionId, newAuction);
 				_unwrap(auctionToBids.get(data.auctionId)).put(bidId, bid);
-				return #Ok(true)
+				return #Ok(bidId)
 				}
 			};
 	};
@@ -384,7 +422,9 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 					tokenId = auction.tokenId;
 					seller = auction.seller;
 					winner = caller;
-					lowestBid = auction.lowestBid;
+					stepBid = auction.stepBid;
+					startPrice = auction.startPrice;
+					currentPrice =  auction.currentPrice;
 					tokenPayment = auction.tokenPayment;
 					startTime = auction.startTime;
 					auctionTime = auction.auctionTime;
@@ -525,7 +565,8 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 						let newAuctionPending = {
 							id = auctionPendingData.id;
 							seller = auctionPendingData.seller;
-							lowestBid = auctionPendingData.lowestBid;
+							stepBid = auctionPendingData.stepBid;
+							startPrice = auctionPendingData.startPrice;
 							tokenPayment = auctionPendingData.tokenPayment;
 							auctionTime = auctionPendingData.auctionTime;
 							metadataAuction = auctionPendingData.metadataAuction;
@@ -540,7 +581,8 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 						let newAuctionPending = {
 							id = auctionPendingData.id;
 							seller = auctionPendingData.seller;
-							lowestBid = auctionPendingData.lowestBid;
+							stepBid = auctionPendingData.stepBid;
+							startPrice = auctionPendingData.startPrice;
 							tokenPayment = auctionPendingData.tokenPayment;
 							auctionTime = auctionPendingData.auctionTime;
 							metadataAuction = auctionPendingData.metadataAuction;
@@ -591,7 +633,9 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 					tokenId = null;
 					seller = auctionPendingData.seller;
 					winner = Principal.fromText("2vxsx-fae");
-					lowestBid = auctionPendingData.lowestBid;
+					stepBid = auctionPendingData.stepBid;
+					currentPrice = auctionPendingData.startPrice;	
+					startPrice = auctionPendingData.startPrice;
 					tokenPayment = auctionPendingData.tokenPayment;
 					startTime = Time.now();
 					auctionTime = auctionPendingData.auctionTime;
@@ -641,6 +685,65 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 		};
 	};
 
+	//========================================================== seller ==========================================================================
+	public shared({caller}) func BecomeTheSeller(data: Types.SellerCreate): async Types.SellerErrorResult {
+		if (Principal.isAnonymous(caller)) {
+			return #Err(#Unauthorized);
+		};
+
+		if (Option.isSome(idToSeller.get(caller))) {
+			return #Err(#AlreadySeller);
+		};
+
+		let newSeller: Types.Seller = {
+			id = caller;
+			username = data.username;
+			description = data.description;
+			locationTime = data.locationTime;
+			social = data.social;
+			email = data.email;
+		};
+		idToSeller.put(caller, newSeller);
+
+		return #Ok(true)
+	};
+
+	public shared({caller}) func UpdateSeller(data: Types.SellerUpdate): async Types.SellerErrorResult {
+		if (Principal.isAnonymous(caller)) {
+			return #Err(#Unauthorized);
+		};
+		switch (idToSeller.get(caller)) {
+			case null {
+				return #Err(#NotSeller);
+			};
+			case (?seller) {
+				let newSeller: Types.Seller = {
+					id = caller;
+					username = data.username;
+					description = data.description;
+					social = data.social;
+					locationTime = data.locationTime;
+					email = seller.email;
+				};
+				return #Ok(true);
+			};
+		};
+	};
+
+	public shared({caller}) func GetSeller(): async [Types.Seller] {
+		Iter.toArray(Iter.map(idToSeller.entries(), func ((id: Principal, value: Types.Seller)): Types.Seller {
+			return value;
+		}));
+	};
+
+	public shared query({caller}) func isSeller(): async Bool {
+		return _isSeller(caller);
+	};
+
+	private func _isSeller(address: Principal) : Bool {
+		return Option.isSome(idToSeller.get(address));
+	};
+
 	//=============================================================================================================================================
 
 	//Helper
@@ -655,6 +758,7 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 		auctionStore := Iter.toArray(idToAuction.entries());
 		bidStore := Iter.toArray(idToBid.entries());
 		auctionPendingStore := Iter.toArray(idToAuctionPending.entries());
+		listSeller := Iter.toArray(idToSeller.entries());
 
         var auctionBids = Iter.toArray(auctionToBids.entries());
 		var size : Nat = auctionBids.size();
@@ -683,6 +787,7 @@ shared(msg) actor class Dacution(dip20: Principal, dip721: Principal, reserve: P
 		auctionStore := [];
 		bidStore := [];
 		auctionPendingStore := [];
+		listSeller := [];
 
         for ((k, v) in auctionTobidsStore.vals()) {
 			let allowed_temp = HashMap.fromIter<Nat, Types.Bid>(v.vals(), 1, Nat.equal, Hash.hash);

@@ -1,3 +1,4 @@
+import HashMap "mo:base/HashMap";
 import Time "mo:base/Time";
 module {
     // ledger types
@@ -46,14 +47,13 @@ module {
         allowance : (owner: Principal, spender: Principal) -> async Nat;
         getMetadata: () -> async Metadata;
     };
-
+    
     //Dip721 interface
     public type IDIP721 = actor {
        isApprovedForAll: (Principal, Principal) -> async Bool;
        getApproved: (Nat) ->  async Principal;
        ownerOf: (Nat) -> async ?Principal;
-       mint: (Text) -> async Nat;
-       transferFrom: (Principal, Principal, Nat) -> ()
+       transferFrom: (Principal, Principal, Nat) -> async ()
     };
 
     //========================================================== Auction
@@ -61,7 +61,8 @@ module {
     public type AuctionPending = {
         id: Nat;
         seller: Principal;
-        lowestBid: Nat;
+        stepBid: Nat;
+        startPrice: Nat;
         tokenPayment: Principal;
         auctionTime: Time.Time;
         metadataAuction: ?MetadataAuction;
@@ -86,7 +87,9 @@ module {
         tokenId: ?Nat;
         seller: Principal;
         winner: Principal;
-        lowestBid: Nat;
+        stepBid: Nat;
+        currentPrice: Nat;
+        startPrice: Nat;
         tokenPayment: Principal;
         startTime: Time.Time;
         auctionTime: Time.Time;
@@ -100,7 +103,8 @@ module {
 
     public type AuctionCreate = {
         tokenId: ?Nat;
-        lowestBid: Nat;
+        stepBid: Nat;
+        startPrice: Nat;
         tokenPayment: Principal;
         auctionTime: Time.Time;
         typeAuction: TypeAuction;
@@ -134,6 +138,42 @@ module {
         #AuctionFinished;
         #AuctionCancelled;
     };
+
+
+
+    //========================================================== Become seller
+    public type Seller = {
+        id: Principal;
+        username: Text;
+        email: Text;
+        locationTime: Text;
+        description: Text;
+        social: Text;
+    };
+
+    public type SellerCreate = {
+        username: Text;
+        email: Text;
+        locationTime: Text;
+        description: Text;
+        social: Text;
+    };
+
+    public type SellerUpdate = {
+        username: Text;
+        locationTime: Text;
+        description: Text;
+        social: Text;
+    };
+
+    public type ApiSellerError = {
+        #Unauthorized;
+        #InvalidData;
+        #AlreadySeller;
+        #NotSeller;
+    };
+
+    //========================================================== Error
 
     //Error
     public type ApiError = {
@@ -195,20 +235,25 @@ module {
         #AuctionNotExist;
         #TimeBidIsExpired;
         #BidIsLessThanHighestBid;
+        #BidIsLessThanLowestPrice;
+        #NotEnoughtBalanceOrNotApprovedYet;
+        #YouAreHighestBidNow;
     };
 
     public type SupportedPaymentResult = Result<Bool, ApiError>;
-    public type AddAuctionResult = Result<Bool, AuctionError>;
+    public type AddAuctionResult = Result<Nat, AuctionError>;
     public type CancelOrderResult = Result<Bool, AuctionError>;
     public type GetAuctionResult = Result<Auction, AuctionError>;
     public type ClaimAuctionResult = Result<Bool, AuctionError>;
     public type UpdateAuctionResult = Result<Bool, AuctionError>;
 
-    public type AuctionBidResult = Result<Bool, AuctionBidError>;
+    public type AuctionBidResult = Result<Nat, AuctionBidError>;
 
     public type GetAuctionPendingResult = Result<AuctionPending, AuctionPendingError>;
     public type VoteAuctionPendingResult = Result<Bool, AuctionPendingError>;
     public type ApproveAuctionPendingResult = Result<Bool, AuctionPendingError>;
     public type GetVotedAuctionPendingResult = Result<[(Principal, Vote)], AuctionPendingError>;
     public type CancelAuctionPendingResult = Result<Bool, AuctionPendingError>;
+
+    public type SellerErrorResult = Result<Bool, ApiSellerError>;
 }

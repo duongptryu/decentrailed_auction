@@ -10,7 +10,7 @@ import Principal "mo:base/Principal";
 import Result "mo:base/Result";
 import Time "mo:base/Time";
 
-actor Dip20Token {
+shared({caller}) actor class Dip20Token() {
 	public shared query (doIHaveTokens__msg) func doIHaveTokens(minimum : Nat) : async Bool {
 		let caller = doIHaveTokens__msg.caller; // First input
 		_balanceOf(caller) >= minimum;
@@ -20,15 +20,15 @@ actor Dip20Token {
 	
 	stable var decimals_ : Nat8 = 2;
 	
-	stable var name_ : Text = "ExampleCoin";
+	stable var name_ : Text = "Decentralized Auction Token";
 	
 	stable var totalSupply_ : Nat = 10_000_000_000;
 	
-	stable var symbol_ : Text = "EXC";
+	stable var symbol_ : Text = "DAU";
 	
 	stable var fee_ : Nat = 1000;
 	
-	stable var owner_ : Principal = Principal.fromText("2vxsx-fae");
+	stable var owner_ : Principal = caller;
 	
 	// Adapted from: https://github.com/Psychedelic/DIP20/blob/main/motoko/src/token.mo
 	
